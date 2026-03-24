@@ -10,6 +10,11 @@
                         "git_sha": "08108058ea36a63f141c25c4e75f9f872a5b2296",
                         "installed_by": ["modules"]
                     },
+                    "minimap2/align": {
+                        "branch": "master",
+                        "git_sha": "5c9f8d5b7671237c906abadc9ff732b301ca15ca",
+                        "installed_by": ["modules"]
+                    },
                     "multiqc": {
                         "branch": "main",
                         "git_sha": "f0719ae309075ae4a291533883847c3f7c441dad",
