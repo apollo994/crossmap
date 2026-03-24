@@ -19,8 +19,8 @@
                     "schema": "assets/schema_input.json",
                     "mimetype": "text/csv",
                     "pattern": "^\\S+\\.csv$",
-                    "description": "Path to comma-separated file containing information about the samples in the experiment.",
-                    "help_text": "You will need to create a design file with information about the samples in your experiment before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row. See [usage docs](https://nf-co.re/crossmap/usage#samplesheet-input).",
+                    "description": "Path to comma-separated file containing species information for cross-species gene mapping.",
+                    "help_text": "A CSV samplesheet with columns: sample, taxid, role (source/target/both), assembly (FASTA path), annotation (GFF3 path, required for source/both). See [usage docs](https://nf-co.re/crossmap/usage#samplesheet-input).",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
@@ -40,6 +40,93 @@
                     "type": "string",
                     "description": "MultiQC report title. Printed as page header, used for filename if not otherwise specified.",
                     "fa_icon": "fas fa-file-signature"
+                }
+            }
+        },
+        "feature_extraction_options": {
+            "title": "Feature extraction options",
+            "type": "object",
+            "fa_icon": "fas fa-filter",
+            "description": "Options for extracting genomic features from source annotations.",
+            "properties": {
+                "feature_types": {
+                    "type": "string",
+                    "default": "lnc_RNA,mRNA",
+                    "description": "Comma-separated list of feature types to extract from source annotations.",
+                    "help_text": "Feature types as they appear in the GFF3 annotation (column 3). Common values: lnc_RNA, mRNA. Each feature type will be extracted, filtered for longest isoform, and mapped independently.",
+                    "fa_icon": "fas fa-filter"
+                }
+            }
+        },
+        "mapping_options": {
+            "title": "Mapping options",
+            "type": "object",
+            "fa_icon": "fas fa-map",
+            "description": "Options for cross-species spliced alignment with minimap2.",
+            "properties": {
+                "minimap2_preset": {
+                    "type": "string",
+                    "default": "splice",
+                    "description": "minimap2 preset for the -x flag.",
+                    "help_text": "The minimap2 preset controls alignment parameters. Use 'splice' for cross-species gene model mapping (default). See minimap2 documentation for other presets.",
+                    "fa_icon": "fas fa-map"
+                }
+            }
+        },
+        "qc_options": {
+            "title": "QC options",
+            "type": "object",
+            "fa_icon": "fas fa-chart-bar",
+            "description": "Quality control options for assessing mapped gene models.",
+            "properties": {
+                "busco_lineage": {
+                    "type": "string",
+                    "description": "BUSCO lineage dataset for completeness assessment.",
+                    "help_text": "Specify the BUSCO lineage dataset (e.g., lepidoptera_odb10, insecta_odb10). Required unless --skip_busco is set. See BUSCO documentation for available lineages.",
+                    "fa_icon": "fas fa-chart-bar"
+                },
+                "busco_mode": {
+                    "type": "string",
+                    "default": "transcriptome",
+                    "description": "BUSCO assessment mode.",
+                    "help_text": "Assessment mode for BUSCO. Default is 'transcriptome' for assessing extracted transcript sequences.",
+                    "enum": ["transcriptome", "genome", "proteins"],
+                    "fa_icon": "fas fa-chart-bar"
+                }
+            }
+        },
+        "skip_options": {
+            "title": "Skip options",
+            "type": "object",
+            "fa_icon": "fas fa-forward",
+            "description": "Options to skip specific pipeline steps.",
+            "properties": {
+                "skip_decoy": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip decoy (negative control) generation.",
+                    "help_text": "Skip generation of decoy gene models by relocating lncRNAs to intergenic regions. Decoys serve as negative controls for mapping specificity.",
+                    "fa_icon": "fas fa-forward"
+                },
+                "skip_busco": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip BUSCO completeness assessment.",
+                    "fa_icon": "fas fa-forward"
+                },
+                "skip_gffcompare": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip gffcompare analysis.",
+                    "help_text": "Skip comparison of mapped gene models against reference annotations. Only applicable when target species is also a source (has annotation).",
+                    "fa_icon": "fas fa-forward"
+                },
+                "skip_download": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip annocli download step.",
+                    "help_text": "Skip automated download of genome assemblies and annotations. When set, all assembly and annotation paths must be provided in the samplesheet.",
+                    "fa_icon": "fas fa-forward"
                 }
             }
         },
@@ -231,6 +318,18 @@
     "allOf": [
         {
             "$ref": "#/$defs/input_output_options"
+        },
+        {
+            "$ref": "#/$defs/feature_extraction_options"
+        },
+        {
+            "$ref": "#/$defs/mapping_options"
+        },
+        {
+            "$ref": "#/$defs/qc_options"
+        },
+        {
+            "$ref": "#/$defs/skip_options"
         },
         {
             "$ref": "#/$defs/reference_genome_options"

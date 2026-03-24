@@ -13,21 +13,32 @@
                 "errorMessage": "Sample name must be provided and cannot contain spaces",
                 "meta": ["id"]
             },
-            "fastq_1": {
-                "type": "string",
-                "format": "file-path",
-                "exists": true,
-                "pattern": "^\\S+\\.f(ast)?q\\.gz$",
-                "errorMessage": "FastQ file for reads 1 must be provided, cannot contain spaces and must have extension '.fq.gz' or '.fastq.gz'"
+            "taxid": {
+                "type": "integer",
+                "errorMessage": "NCBI taxonomy ID must be provided as an integer",
+                "meta": ["taxid"]
             },
-            "fastq_2": {
+            "role": {
+                "type": "string",
+                "enum": ["source", "target", "both"],
+                "errorMessage": "Role must be one of 'source', 'target', or 'both'",
+                "meta": ["role"]
+            },
+            "assembly": {
                 "type": "string",
                 "format": "file-path",
                 "exists": true,
-                "pattern": "^\\S+\\.f(ast)?q\\.gz$",
-                "errorMessage": "FastQ file for reads 2 cannot contain spaces and must have extension '.fq.gz' or '.fastq.gz'"
+                "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+                "errorMessage": "Assembly file must have extension '.fa', '.fna', '.fasta' (optionally gzipped) and cannot contain spaces"
+            },
+            "annotation": {
+                "type": "string",
+                "format": "file-path",
+                "exists": true,
+                "pattern": "^\\S+\\.g(ff3?|tf)(\\.gz)?$",
+                "errorMessage": "Annotation file must have extension '.gff', '.gff3', or '.gtf' (optionally gzipped) and cannot contain spaces"
             }
         },
-        "required": ["sample", "fastq_1"]
+        "required": ["sample", "taxid", "role", "assembly"]
     }
 }

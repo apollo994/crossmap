@@ -75,25 +75,33 @@ workflow PIPELINE_INITIALISATION {
     Channel
         .fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
         .map {
-            meta, fastq_1, fastq_2 ->
-                if (!fastq_2) {
-                    return [ meta.id, meta + [ single_end:true ], [ fastq_1 ] ]
-                } else {
-                    return [ meta.id, meta + [ single_end:false ], [ fastq_1, fastq_2 ] ]
-                }
+            meta, assembly, annotation ->
+                def new_meta = meta + [
+                    has_annotation: annotation ? true : false
+                ]
+                return [ new_meta, assembly, annotation ?: [] ]
         }
-        .groupTuple()
-        .map { samplesheet ->
-            validateInputSamplesheet(samplesheet)
+        .tap { ch_samplesheet }
+        .set { ch_all_species }
+
+    // Source species: have annotation, provide gene models
+    ch_all_species
+        .filter { meta, assembly, annotation ->
+            meta.role == 'source' || meta.role == 'both'
         }
-        .map {
-            meta, fastqs ->
-                return [ meta, fastqs.flatten() ]
+        .set { ch_sources }
+
+    // Target species: receive mapped gene models
+    ch_all_species
+        .filter { meta, assembly, annotation ->
+            meta.role == 'target' || meta.role == 'both'
         }
-        .set { ch_samplesheet }
+        .set { ch_targets }
 
     emit:
     samplesheet = ch_samplesheet
+    sources     = ch_sources
+    targets     = ch_targets
     versions    = ch_versions
 }
 
@@ -155,21 +163,22 @@ workflow PIPELINE_COMPLETION {
 //
 def validateInputParameters() {
     genomeExistsError()
+
+    // Validate that busco_lineage is provided when BUSCO is not skipped
+    if (!params.skip_busco && !params.busco_lineage) {
+        error("--busco_lineage must be provided when BUSCO is enabled. Use --skip_busco to skip BUSCO assessment.")
+    }
 }
 
 //
 // Validate channels from input samplesheet
 //
-def validateInputSamplesheet(input) {
-    def (metas, fastqs) = input[1..2]
-
-    // Check that multiple runs of the same sample are of the same datatype i.e. single-end / paired-end
-    def endedness_ok = metas.collect{ meta -> meta.single_end }.unique().size == 1
-    if (!endedness_ok) {
-        error("Please check input samplesheet -> Multiple runs of a sample must be of the same datatype i.e. single-end or paired-end: ${metas[0].id}")
+def validateInputSamplesheet(meta, assembly, annotation) {
+    // Check that source/both species have annotation
+    if ((meta.role == 'source' || meta.role == 'both') && !annotation) {
+        error("Please check input samplesheet -> Source or 'both' species must have an annotation file: ${meta.id}")
     }
-
-    return [ metas[0], fastqs ]
+    return true
 }
 //
 // Get attribute from genome config file e.g. fasta
