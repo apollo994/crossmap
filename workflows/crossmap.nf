@@ -5,6 +5,7 @@
 */
 
 // nf-core modules
+include { MINIMAP2_ALIGN         } from '../modules/nf-core/minimap2/align/main'
 include { MULTIQC                } from '../modules/nf-core/multiqc/main'
 
 // Local modules
@@ -89,24 +90,53 @@ workflow CROSSMAP {
             return [ meta_mapping, target_assembly, exon_fasta ]
         }
 
-    // TODO: Step 8 — Install and call MINIMAP2_ALIGN nf-core module
-    //   MINIMAP2_ALIGN ( ch_mapping_input.map { meta, ref, reads -> [ meta, reads, ref, true, 'bam', false, false ] } )
-    //   ch_versions = ch_versions.mix(MINIMAP2_ALIGN.out.versions.first())
+    //
+    // Step 8: MINIMAP2_ALIGN — spliced alignment
+    //
+    MINIMAP2_ALIGN (
+        ch_mapping_input.map { meta, ref, reads -> [ meta, reads ] },   // reads (source exon FASTA)
+        ch_mapping_input.map { meta, ref, reads -> [ meta, ref ] },     // reference (target genome)
+        true,       // bam_format
+        'csi',      // bam_index_extension
+        false,      // cigar_paf_format
+        false       // cigar_bam
+    )
 
-    // TODO: Step 9 — BAM_TO_GFF
-    //   BAM_TO_GFF ( MINIMAP2_ALIGN.out.bam )
-    //   ch_versions = ch_versions.mix(BAM_TO_GFF.out.versions.first())
+    //
+    // Step 9: BAM_TO_GFF — convert spliced BAM to GFF3 gene models
+    //
+    BAM_TO_GFF ( MINIMAP2_ALIGN.out.bam )
+    ch_versions = ch_versions.mix(BAM_TO_GFF.out.versions.first())
 
-    // TODO: Step 10 — GFFCOMPARE (conditional: when target is also a source)
-    //   ch_for_gffcompare = BAM_TO_GFF.out.gff
-    //       .filter { meta, gff -> meta.target_role == 'both' }
-    //   GFFCOMPARE ( ch_for_gffcompare joined with reference GFF )
+    //
+    // Step 10: GFFCOMPARE — compare mapped vs reference (when target is also source)
+    // Only run when target species has role 'both' (has its own annotation)
+    //
+    // TODO: Wire GFFCOMPARE once nf-core module is installed
+    // ch_for_gffcompare = BAM_TO_GFF.out.gff
+    //     .filter { meta, gff -> meta.target_role == 'both' && !params.skip_gffcompare }
+    // Need to join with the correct reference GFF (matching feature_type for target species)
+    // GFFCOMPARE ( ch_for_gffcompare, ch_reference_gff )
 
-    // TODO: Step 11 — GFFREAD_EXTRACT (extract mapped transcript sequences)
-    //   GFFREAD ( BAM_TO_GFF.out.gff joined with target assembly )
+    //
+    // Step 11: GFFREAD — extract mapped transcript sequences
+    // Needs target genome FASTA joined with predicted GFF
+    //
+    // TODO: Wire GFFREAD once nf-core module is installed
+    // ch_for_gffread = BAM_TO_GFF.out.gff
+    //     .map { meta, gff -> [ meta.target_id, meta, gff ] }
+    //     .combine(ch_target_genomes.map { meta, assembly -> [ meta.id, assembly ] }, by: 0)
+    //     .map { target_id, meta, gff, assembly -> [ meta, gff, assembly ] }
+    // GFFREAD ( ch_for_gffread )
 
-    // TODO: Step 12 — BUSCO (source + mapped transcripts)
-    //   BUSCO ( source_transcripts.mix(mapped_transcripts) )
+    //
+    // Step 12: BUSCO — completeness assessment (source + mapped transcripts)
+    //
+    // TODO: Wire BUSCO once nf-core module is installed
+    // ch_for_busco = EXTRACT_FEATURES.out.feature_sequences
+    //     .map { meta, ft, fasta -> [ meta + [busco_tag: "source_${ft}"], fasta ] }
+    //     .mix(GFFREAD.out.fasta.map { meta, fasta -> [ meta + [busco_tag: "mapped"], fasta ] })
+    // BUSCO ( ch_for_busco, params.busco_lineage, [], [], [] )
 
     //
     // Collate and save software versions

@@ -52,9 +52,20 @@ modules.json                # Tracks installed nf-core modules/subworkflows with
 workflows/
   crossmap.nf               # Primary workflow logic
 
-modules/nf-core/            # Reusable process modules from nf-core registry
-  fastqc/                   # Each module: main.nf, meta.yml, environment.yml, tests/
-  multiqc/
+modules/
+  nf-core/                  # Reusable process modules from nf-core registry
+    minimap2/align/         # Spliced alignment (minimap2 -ax splice)
+    multiqc/                # Report aggregation
+  local/                    # Pipeline-specific process modules
+    filter_features.nf      # Extract feature types from GFF3 (awk + AGAT)
+    agat_longest_isoform.nf # Keep longest isoform per gene
+    agat_extract_sequences.nf # GFF3 + FASTA → exon sequences
+    get_non_overlapping.nf  # lncRNA not overlapping mRNA (bedtools + AGAT)
+    get_intergenic_intervals.nf # Identify intergenic regions (AGAT)
+    relocate_loci.nf        # Decoy generation (STUB — needs user logic)
+    bam_to_gff.nf           # BAM → GFF3 conversion (STUB — needs user logic)
+    annocli_alias.nf        # Alias normalization (STUB — needs annocli)
+    annocli_download.nf     # Data download (STUB — needs annocli)
 
 subworkflows/
   nf-core/                  # Utility subworkflows from nf-core registry
@@ -63,6 +74,8 @@ subworkflows/
     utils_nfschema_plugin/      # Parameter validation against schema
   local/
     utils_nfcore_crossmap_pipeline/  # Pipeline-specific init/completion logic
+    prepare_genome/          # Steps 1-2: download + alias normalization
+    extract_features/        # Steps 3-7: filter → longest → non-overlap → decoy → extract
 
 conf/
   base.config               # Default resource allocation (CPU, memory, time per label)
