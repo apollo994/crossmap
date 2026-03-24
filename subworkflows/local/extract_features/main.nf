@@ -114,6 +114,7 @@ workflow EXTRACT_FEATURES {
 
     emit:
     feature_sequences = AGAT_EXTRACT_SEQUENCES.out.fasta  // channel: [ meta, feature_type, exon_fasta ]
+    all_gffs          = ch_all_gffs                        // channel: [ meta, feature_type, gff ] — all feature variants
     longest_gffs      = ch_longest                         // channel: [ meta, feature_type, longest_gff ]
     nonoverlapping    = GET_NON_OVERLAPPING.out.gff        // channel: [ meta, nonoverlapping_gff ]
     versions          = ch_versions

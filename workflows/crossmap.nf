@@ -6,6 +6,9 @@
 
 // nf-core modules
 include { MINIMAP2_ALIGN         } from '../modules/nf-core/minimap2/align/main'
+include { GFFCOMPARE             } from '../modules/nf-core/gffcompare/main'
+include { GFFREAD                } from '../modules/nf-core/gffread/main'
+include { BUSCO_BUSCO            } from '../modules/nf-core/busco/busco/main'
 include { MULTIQC                } from '../modules/nf-core/multiqc/main'
 
 // Local modules
@@ -47,13 +50,11 @@ workflow CROSSMAP {
     // ch_versions = ch_versions.mix(PREPARE_GENOME.out.versions)
 
     // For now, use source files directly from samplesheet
-    // (assumes annotation is already alias-matched or alias step will be added)
     ch_prepared_sources = ch_sources
 
     //
-    // SUBWORKFLOW: Extract features from source annotations
+    // SUBWORKFLOW: Extract features from source annotations (Steps 3-7)
     //
-    // Parse feature_types parameter into a channel list
     ch_feature_types = Channel.fromList(params.feature_types.tokenize(','))
 
     EXTRACT_FEATURES (
@@ -64,17 +65,12 @@ workflow CROSSMAP {
 
     //
     // Step 8: MINIMAP2 — all-on-all spliced alignment
-    // Create cartesian product: source features × target genomes
-    //
-    // source features: [ meta_source, feature_type, exon_fasta ]
-    // target genomes:  [ meta_target, assembly, annotation ]
     //
     ch_source_features = EXTRACT_FEATURES.out.feature_sequences
-
     ch_target_genomes = ch_targets
         .map { meta, assembly, annotation -> [ meta, assembly ] }
 
-    // Cartesian product of source features × target genomes
+    // Cartesian product: source features × target genomes
     ch_mapping_input = ch_source_features
         .combine(ch_target_genomes)
         .map { meta_source, feature_type, exon_fasta, meta_target, target_assembly ->
@@ -90,12 +86,9 @@ workflow CROSSMAP {
             return [ meta_mapping, target_assembly, exon_fasta ]
         }
 
-    //
-    // Step 8: MINIMAP2_ALIGN — spliced alignment
-    //
     MINIMAP2_ALIGN (
-        ch_mapping_input.map { meta, ref, reads -> [ meta, reads ] },   // reads (source exon FASTA)
-        ch_mapping_input.map { meta, ref, reads -> [ meta, ref ] },     // reference (target genome)
+        ch_mapping_input.map { meta, ref, reads -> [ meta, reads ] },
+        ch_mapping_input.map { meta, ref, reads -> [ meta, ref ] },
         true,       // bam_format
         'csi',      // bam_index_extension
         false,      // cigar_paf_format
@@ -109,34 +102,92 @@ workflow CROSSMAP {
     ch_versions = ch_versions.mix(BAM_TO_GFF.out.versions.first())
 
     //
-    // Step 10: GFFCOMPARE — compare mapped vs reference (when target is also source)
-    // Only run when target species has role 'both' (has its own annotation)
+    // Step 10: GFFCOMPARE — compare mapped vs reference annotation
+    // Only when target species has role 'both' (has its own annotation)
     //
-    // TODO: Wire GFFCOMPARE once nf-core module is installed
-    // ch_for_gffcompare = BAM_TO_GFF.out.gff
-    //     .filter { meta, gff -> meta.target_role == 'both' && !params.skip_gffcompare }
-    // Need to join with the correct reference GFF (matching feature_type for target species)
-    // GFFCOMPARE ( ch_for_gffcompare, ch_reference_gff )
+    if (!params.skip_gffcompare) {
+        // Reference GFFs from extract_features for 'both' species, keyed by [species_id, feature_type]
+        ch_reference_gffs = EXTRACT_FEATURES.out.all_gffs
+            .filter { meta, feature_type, gff -> meta.role == 'both' }
+            .map { meta, feature_type, gff -> [ meta.id, feature_type, gff ] }
+
+        // Predicted GFFs where target has annotation, join with matching reference
+        ch_for_gffcompare = BAM_TO_GFF.out.gff
+            .filter { meta, gff -> meta.target_role == 'both' }
+            .map { meta, gff -> [ meta.target_id, meta.feature_type, meta, gff ] }
+            .combine(ch_reference_gffs, by: [0, 1])
+            .map { target_id, feature_type, meta, predicted_gff, reference_gff ->
+                [ meta, predicted_gff, reference_gff ]
+            }
+
+        GFFCOMPARE (
+            ch_for_gffcompare.map { meta, pred, ref -> [ meta, pred ] },
+            [ [:], [], [] ],    // no reference genome FASTA
+            ch_for_gffcompare.map { meta, pred, ref -> [ meta, ref ] }
+        )
+
+        ch_multiqc_files = ch_multiqc_files.mix(
+            GFFCOMPARE.out.stats.collect { it[1] }
+        )
+    }
 
     //
     // Step 11: GFFREAD — extract mapped transcript sequences
-    // Needs target genome FASTA joined with predicted GFF
     //
-    // TODO: Wire GFFREAD once nf-core module is installed
-    // ch_for_gffread = BAM_TO_GFF.out.gff
-    //     .map { meta, gff -> [ meta.target_id, meta, gff ] }
-    //     .combine(ch_target_genomes.map { meta, assembly -> [ meta.id, assembly ] }, by: 0)
-    //     .map { target_id, meta, gff, assembly -> [ meta, gff, assembly ] }
-    // GFFREAD ( ch_for_gffread )
+    ch_gffread_input = BAM_TO_GFF.out.gff
+        .map { meta, gff -> [ meta.target_id, meta, gff ] }
+        .combine(ch_target_genomes.map { meta_t, assembly -> [ meta_t.id, assembly ] }, by: 0)
+        .map { target_id, meta, gff, assembly -> [ meta, gff, assembly ] }
+
+    GFFREAD (
+        ch_gffread_input.map { meta, gff, assembly -> [ meta, gff ] },
+        ch_gffread_input.map { meta, gff, assembly -> assembly }
+    )
 
     //
     // Step 12: BUSCO — completeness assessment (source + mapped transcripts)
     //
-    // TODO: Wire BUSCO once nf-core module is installed
-    // ch_for_busco = EXTRACT_FEATURES.out.feature_sequences
-    //     .map { meta, ft, fasta -> [ meta + [busco_tag: "source_${ft}"], fasta ] }
-    //     .mix(GFFREAD.out.fasta.map { meta, fasta -> [ meta + [busco_tag: "mapped"], fasta ] })
-    // BUSCO ( ch_for_busco, params.busco_lineage, [], [], [] )
+    if (!params.skip_busco) {
+        // Source transcripts
+        ch_busco_source = EXTRACT_FEATURES.out.feature_sequences
+            .map { meta, feature_type, fasta ->
+                def busco_meta = [
+                    id: "${meta.id}_source_${feature_type}",
+                    sample: meta.id,
+                    type: 'source',
+                    feature_type: feature_type
+                ]
+                return [ busco_meta, fasta ]
+            }
+
+        // Mapped transcripts
+        ch_busco_mapped = GFFREAD.out.gffread_fasta
+            .map { meta, fasta ->
+                def busco_meta = [
+                    id: "${meta.id}_mapped",
+                    sample: meta.target_id,
+                    source: meta.source_id,
+                    type: 'mapped',
+                    feature_type: meta.feature_type
+                ]
+                return [ busco_meta, fasta ]
+            }
+
+        ch_for_busco = ch_busco_source.mix(ch_busco_mapped)
+
+        BUSCO_BUSCO (
+            ch_for_busco,
+            params.busco_mode,
+            params.busco_lineage,
+            [],     // busco_lineages_path — will download
+            [],     // config_file
+            true    // clean_intermediates
+        )
+
+        ch_multiqc_files = ch_multiqc_files.mix(
+            BUSCO_BUSCO.out.short_summaries_txt.collect { it[1] }
+        )
+    }
 
     //
     // Collate and save software versions
